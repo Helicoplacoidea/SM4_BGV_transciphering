@@ -137,8 +137,7 @@ char constants[8] = {0, 1, 1, 0, 1, 0, 1, 1};
 
 int num = 0;
 
-// 递归辅助函数
-std::vector<helib::Ctxt> recurse(const std::vector<helib::Ctxt>& bits)
+std::vector<helib::Ctxt> recurse_raw(const std::vector<helib::Ctxt>& bits)
 {
   if (bits.size() == 2) {
     helib::Ctxt tmp = bits[0];
@@ -152,8 +151,46 @@ std::vector<helib::Ctxt> recurse(const std::vector<helib::Ctxt>& bits)
   std::vector<helib::Ctxt> left(bits.begin(), bits.begin() + mid);
   std::vector<helib::Ctxt> right(bits.begin() + mid, bits.end());
 
-  std::vector<helib::Ctxt> left_res = recurse(left);
-  std::vector<helib::Ctxt> right_res = recurse(right);
+  std::vector<helib::Ctxt> left_res = recurse_raw(left);
+  std::vector<helib::Ctxt> right_res = recurse_raw(right);
+
+  // std::cout << "test" << std::endl;
+
+  std::vector<helib::Ctxt> combined;
+
+  for (helib::Ctxt l : left_res) {
+    for (helib::Ctxt r : right_res) {
+      helib::Ctxt tmp = l;
+
+      tmp.multiplyBy(r);
+      num++;
+      combined.push_back(tmp);
+    }
+  }
+
+  // 拼接 combined + left + right
+  combined.insert(combined.end(), left_res.begin(), left_res.end());
+  combined.insert(combined.end(), right_res.begin(), right_res.end());
+  // std::cout << "test" << std::endl;
+  return combined;
+}
+
+std::vector<helib::Ctxt> recurse_LazyRelin(const std::vector<helib::Ctxt>& bits)
+{
+  if (bits.size() == 2) {
+    helib::Ctxt tmp = bits[0];
+    // tmp.multLowLvl(bits[1]);
+    tmp.multiplyBy(bits[1]);
+    num++;
+    return {bits[0], bits[1], tmp};
+  }
+
+  size_t mid = bits.size() / 2;
+  std::vector<helib::Ctxt> left(bits.begin(), bits.begin() + mid);
+  std::vector<helib::Ctxt> right(bits.begin() + mid, bits.end());
+
+  std::vector<helib::Ctxt> left_res = recurse_LazyRelin(left);
+  std::vector<helib::Ctxt> right_res = recurse_LazyRelin(right);
 
   // std::cout << "test" << std::endl;
 
@@ -185,14 +222,23 @@ std::vector<helib::Ctxt> recurse(const std::vector<helib::Ctxt>& bits)
   return combined;
 }
 
-// 主函数：输入长度为8的比特列表，输出255个monomial值
-std::vector<helib::Ctxt> layered_combine_bin(
+std::vector<helib::Ctxt> layered_combine_bin_raw(
     const std::vector<helib::Ctxt>& bits)
 {
   if (bits.size() != 8) {
     throw std::invalid_argument("Input must be 8 bits");
   }
-  return recurse(bits);
+  return recurse_raw(bits);
+}
+
+// 主函数：输入长度为8的比特列表，输出255个monomial值
+std::vector<helib::Ctxt> layered_combine_bin_Lazy(
+    const std::vector<helib::Ctxt>& bits)
+{
+  if (bits.size() != 8) {
+    throw std::invalid_argument("Input must be 8 bits");
+  }
+  return recurse_LazyRelin(bits);
 }
 
 // --- 生成递归 LayeredCombineBin 的 monomial bitmask 顺序 ---
@@ -274,17 +320,28 @@ helib::Ctxt sm4_SBoxLUT_bit(helib::Ctxt const_enc,
   for (int j = 0; j < monomials.size(); j++) {
     if (selected_sbox[j] == 0)
       continue;
-    // helib::Ctxt tmp = monomials[j];             // 复制一个副本
-    // tmp.multByConstant((long)selected_sbox[j]); // 原地乘常数
-    // ctmp += tmp;                                // 累加到输出中
     ctmp += monomials[j];
   }
   return ctmp;
 }
 
-void sm4_SBoxLUT_byte(std::vector<helib::Ctxt>& bit,
-                      helib::Ctxt ctmp,
-                      std::vector<helib::Ctxt>& monomials)
+void sm4_SBoxLUT_byte_raw(std::vector<helib::Ctxt>& bit,
+                          helib::Ctxt ctmp,
+                          std::vector<helib::Ctxt>& monomials)
+{
+  if (bit.size() != 8) {
+    std::cout << "The input length of the Sbox is wrong (8bit)!!" << std::endl;
+  };
+#pragma omp parallel for
+  for (int i = 0; i < 8; i++) {
+    // printf("[OMP] Thread %d working on bit %d\n", omp_get_thread_num(), i);
+    bit[i] = sm4_SBoxLUT_bit(ctmp, monomials, i);
+  }
+}
+
+void sm4_SBoxLUT_byte_LazyRelin(std::vector<helib::Ctxt>& bit,
+                                helib::Ctxt ctmp,
+                                std::vector<helib::Ctxt>& monomials)
 {
   if (bit.size() != 8) {
     std::cout << "The input length of the Sbox is wrong (8bit)!!" << std::endl;
@@ -297,20 +354,40 @@ void sm4_SBoxLUT_byte(std::vector<helib::Ctxt>& bit,
   }
 }
 
-void SubByte(std::vector<helib::Ctxt>& tmp,
-             const helib::PubKey& public_key,
-             helib::Ctxt ctmp)
+void SubByte_raw(std::vector<helib::Ctxt>& tmp,
+                 const helib::PubKey& public_key,
+                 helib::Ctxt ctmp)
 {
   std::vector<helib::Ctxt> monomials(255, helib::Ctxt(public_key));
   for (int i = 0; i < 4; i++) {
     std::vector<helib::Ctxt> bit(tmp.begin() + 8 * i,
                                  tmp.begin() + 8 * (i + 1));
     std::reverse(bit.begin(), bit.end()); // <-- 加这一行，改成大端顺序
-    monomials = layered_combine_bin(bit);
+    monomials = layered_combine_bin_raw(bit);
     std::cout << "NUM:" << num << std::endl;
     num = 0;
     monomials = reorder_to_bitmask_order(monomials);
-    sm4_SBoxLUT_byte(bit, ctmp, monomials);
+    sm4_SBoxLUT_byte_raw(bit, ctmp, monomials);
+    std::reverse(bit.begin(),
+                 bit.end()); // <-- 加这一行，改成大端顺序
+    std::copy(bit.begin(), bit.end(), tmp.begin() + 8 * i);
+  }
+}
+
+void SubByte_Lazy(std::vector<helib::Ctxt>& tmp,
+                  const helib::PubKey& public_key,
+                  helib::Ctxt ctmp)
+{
+  std::vector<helib::Ctxt> monomials(255, helib::Ctxt(public_key));
+  for (int i = 0; i < 4; i++) {
+    std::vector<helib::Ctxt> bit(tmp.begin() + 8 * i,
+                                 tmp.begin() + 8 * (i + 1));
+    std::reverse(bit.begin(), bit.end()); // <-- 加这一行，改成大端顺序
+    monomials = layered_combine_bin_Lazy(bit);
+    std::cout << "NUM:" << num << std::endl;
+    num = 0;
+    monomials = reorder_to_bitmask_order(monomials);
+    sm4_SBoxLUT_byte_LazyRelin(bit, ctmp, monomials);
     std::reverse(bit.begin(),
                  bit.end()); // <-- 加这一行，改成大端顺序
     std::copy(bit.begin(), bit.end(), tmp.begin() + 8 * i);
@@ -365,7 +442,7 @@ void sm4_F(std::span<helib::Ctxt> ctxt0,
     tmp[i] += rk[i];
   }
   auto start = std::chrono::high_resolution_clock::now();
-  SubByte(tmp, public_key, ctmp);
+  SubByte_Lazy(tmp, public_key, ctmp);
   // invertSingle(tmp);
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double, std::milli> duration_ms = end - start;
