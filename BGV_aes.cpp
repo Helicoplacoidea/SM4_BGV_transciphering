@@ -175,26 +175,26 @@ std::vector<helib::Ctxt> recurse(const std::vector<helib::Ctxt>& bits)
   // std::cout << "test" << std::endl;
 
   std::vector<helib::Ctxt> combined;
-  // if (bits.size() == 4)
-  for (helib::Ctxt l : left_res) {
-    for (helib::Ctxt r : right_res) {
-      helib::Ctxt tmp = l;
+  if (bits.size() == 4)
+    for (helib::Ctxt l : left_res) {
+      for (helib::Ctxt r : right_res) {
+        helib::Ctxt tmp = l;
 
-      tmp.multiplyBy(r);
-      num++;
-      combined.push_back(tmp);
+        tmp.multiplyBy(r);
+        num++;
+        combined.push_back(tmp);
+      }
     }
-  }
-  // else
-  //   for (helib::Ctxt l : left_res) {
-  //     for (helib::Ctxt r : right_res) {
-  //       helib::Ctxt tmp = l;
+  else
+    for (helib::Ctxt l : left_res) {
+      for (helib::Ctxt r : right_res) {
+        helib::Ctxt tmp = l;
 
-  //       tmp.multLowLvl(r);
-  //       // num++;
-  //       combined.push_back(tmp);
-  //     }
-  //   }
+        tmp.multLowLvl(r);
+        // num++;
+        combined.push_back(tmp);
+      }
+    }
   // 拼接 combined + left + right
   combined.insert(combined.end(), left_res.begin(), left_res.end());
   combined.insert(combined.end(), right_res.begin(), right_res.end());
@@ -310,8 +310,41 @@ void sm4_SBoxLUT_byte(std::vector<helib::Ctxt>& bit,
   for (int i = 0; i < 8; i++) {
     // printf("[OMP] Thread %d working on bit %d\n", omp_get_thread_num(), i);
     bit[i] = sm4_SBoxLUT_bit(ctmp, monomials, i);
-    // bit[i].reLinearize(); // <-- 重新线性化
+    bit[i].reLinearize(); // <-- 重新线性化
   }
+}
+
+void SubByte(std::vector<helib::Ctxt>& tmp,
+             const helib::PubKey& public_key,
+             helib::Ctxt ctmp)
+{
+  std::vector<helib::Ctxt> monomials(255, helib::Ctxt(public_key));
+  for (int i = 0; i < 4; i++) {
+    std::vector<helib::Ctxt> bit(tmp.begin() + 8 * i,
+                                 tmp.begin() + 8 * (i + 1));
+    std::reverse(bit.begin(), bit.end()); // <-- 加这一行，改成大端顺序
+    monomials = layered_combine_bin(bit);
+    std::cout << "NUM:" << num << std::endl;
+    num = 0;
+    monomials = reorder_to_bitmask_order(monomials);
+    sm4_SBoxLUT_byte(bit, ctmp, monomials);
+    std::reverse(bit.begin(),
+                 bit.end()); // <-- 加这一行，改成大端顺序
+    std::copy(bit.begin(), bit.end(), tmp.begin() + 8 * i);
+  }
+}
+
+void invertSingle(helib::Ctxt& ctxt)
+{
+  helib::Ctxt tmp1(ctxt);     // tmp1   = data[i] = X
+  tmp1.frobeniusAutomorph(1); // tmp1   = X^2   after Z -> Z^2
+  ctxt.multiplyBy(tmp1);      // data[i]= X^3
+  helib::Ctxt tmp2(ctxt);     // tmp2   = X^3
+  tmp2.frobeniusAutomorph(2); // tmp2   = X^12  after Z -> Z^4
+  tmp1.multiplyBy(tmp2);      // tmp1   = X^14
+  ctxt.multiplyBy(tmp2);      // data[i]= X^15
+  ctxt.frobeniusAutomorph(4); // data[i]= X^240 after Z -> Z^16
+  ctxt.multiplyBy(tmp1);      // data[i]= X^254
 }
 
 void sm4_L(std::vector<helib::Ctxt>& ctxt, const helib::PubKey& public_key)
@@ -340,7 +373,7 @@ void sm4_F(std::span<helib::Ctxt> ctxt0,
            std::vector<helib::Ctxt>& F_out)
 {
   std::vector<helib::Ctxt> tmp(32, helib::Ctxt(public_key));
-  std::vector<helib::Ctxt> monomials(255, helib::Ctxt(public_key));
+  // std::vector<helib::Ctxt> monomials(255, helib::Ctxt(public_key));
 
   for (int i = 0; i < 32; i++) {
     tmp[i] = ctxt1[i];
@@ -349,19 +382,8 @@ void sm4_F(std::span<helib::Ctxt> ctxt0,
     tmp[i] += rk[i];
   }
   auto start = std::chrono::high_resolution_clock::now();
-  for (int i = 0; i < 4; i++) {
-    std::vector<helib::Ctxt> bit(tmp.begin() + 8 * i,
-                                 tmp.begin() + 8 * (i + 1));
-    std::reverse(bit.begin(), bit.end()); // <-- 加这一行，改成大端顺序
-    monomials = layered_combine_bin(bit);
-    std::cout << "NUM:" << num << std::endl;
-    num = 0;
-    monomials = reorder_to_bitmask_order(monomials);
-    sm4_SBoxLUT_byte(bit, ctmp, monomials);
-    std::reverse(bit.begin(),
-                 bit.end()); // <-- 加这一行，改成大端顺序
-    std::copy(bit.begin(), bit.end(), tmp.begin() + 8 * i);
-  }
+  SubByte(tmp, public_key, ctmp);
+  // invertSingle(tmp);
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double, std::milli> duration_ms = end - start;
   std::cout << "1 Subbyte took " << duration_ms.count() << " ms." << std::endl;
@@ -453,22 +475,7 @@ void sm4_bitwise_F(const uint8_t in0[32],
   }
 }
 
-uint8_t test_plain[16] = {0x01,
-                          0x23,
-                          0x45,
-                          0x67,
-                          0x89,
-                          0xab,
-                          0xcd,
-                          0xef,
-                          0xfe,
-                          0xdc,
-                          0xba,
-                          0x98,
-                          0x76,
-                          0x54,
-                          0x32,
-                          0x10};
+uint32_t test_plain[4] = {0x01234567, 0x89abcdef, 0xfedcba98, 0x76543210};
 
 uint8_t test_rk[128] = {
     0xf1, 0x21, 0x86, 0xf9, 0x41, 0x66, 0x2b, 0x61, 0x5a, 0x6a, 0xb1, 0x9a,
@@ -483,14 +490,8 @@ uint8_t test_rk[128] = {
     0xf1, 0x78, 0x0c, 0x81, 0x42, 0x8d, 0x36, 0x54, 0x62, 0x29, 0x34, 0x96,
     0x01, 0xcf, 0x72, 0xe5, 0x91, 0x24, 0xa0, 0x12};
 
-void encode(std::vector<uint8_t>& in_vec, std::vector<uint8_t>& rk)
+void Encode_RK(std::vector<uint8_t>& rk)
 {
-  for (int i = 0; i < 16; i++) {
-    for (int j = 0; j < 8; j++) {
-      in_vec[i * 8 + j] = (test_plain[i] >> (7 - j)) & 0x01;
-    }
-  }
-
   for (int i = 0; i < 128; i++) {
     for (int j = 0; j < 8; j++) {
       rk[i * 8 + j] = (test_rk[i] >> (7 - j)) & 0x01;
@@ -498,8 +499,88 @@ void encode(std::vector<uint8_t>& in_vec, std::vector<uint8_t>& rk)
   }
 }
 
+void Encode_Plain(std::vector<uint8_t>& in_vec, int ctr)
+{
+  for (int i = 0; i < 4; i++) {
+    for (int j = 0; j < 32; j++) {
+      if (i == 3)
+        in_vec[i * 32 + j] = ((test_plain[i] + ctr) >> (31 - j)) & 0x01;
+      else
+        in_vec[i * 32 + j] = (test_plain[i] >> (31 - j)) & 0x01;
+    }
+  }
+}
+
+void SM4_CTR(int block_num, std::vector<std::vector<uint8_t>>& bit_mask)
+{
+  std::vector<uint32_t> plain(block_num * 4);
+  std::vector<uint8_t> roundKeys(128 * 8);
+  Encode_RK(roundKeys);
+
+  for (int i = 0; i < block_num; i++) {
+    plain[i * 4 + 0] = test_plain[0];
+    plain[i * 4 + 1] = test_plain[1];
+    plain[i * 4 + 2] = test_plain[2];
+    plain[i * 4 + 3] = test_plain[3] + i;
+  }
+  for (int i = 0; i < block_num; i++) {
+    std::vector<uint8_t> state(128);
+    uint8_t X[36][32];
+    for (int j = 0; j < 4; j++) {
+      for (int b = 0; b < 32; b++) {
+        state[j * 32 + b] = (plain[i * 4 + j] >> (31 - b)) & 0x01;
+      }
+    }
+    std::vector<uint8_t> sm4_output_bytes(4, 0);
+    // 初始化 X0–X3
+    for (int j = 0; j < 4; j++) {
+      for (int b = 0; b < 32; b++)
+        X[j][b] = state[j * 32 + b];
+    }
+    for (int j = 0; j < 32; j++) {
+      sm4_bitwise_F(X[j],
+                    X[j + 1],
+                    X[j + 2],
+                    X[j + 3],
+                    &roundKeys[j * 32],
+                    X[j + 4]);
+      for (int byte = 0; byte < 4; ++byte) {
+        uint8_t val = 0;
+        for (int bit = 0; bit < 8; ++bit) {
+          int idx = byte * 8 + bit;
+          int bit_val = static_cast<long>(X[j + 4][idx]);
+
+          val |= (bit_val & 0x1) << (7 - bit);
+        }
+        sm4_output_bytes[byte] = val;
+      }
+      // std::cout << "Round " << i + 1 << ":" << std::endl;
+      // std::cout << "SM4 F OUTPUT (big-endian bytes): ";
+      // for (uint8_t b : sm4_output_bytes) {
+      //   std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b
+      //             << " ";
+      // }
+    }
+    for (int j = 0; j < 4; j++) {
+      for (int b = 0; b < 32; b++)
+        bit_mask[i][j * 32 + b] = X[35 - j][b];
+    }
+  }
+}
+
 int main(int argc, char* argv[])
 {
+  int block_num = 1200;
+  std::vector<std::vector<uint8_t>> bit_mask(block_num,
+                                             std::vector<uint8_t>(128, 0));
+  std::vector<std::vector<uint8_t>> message(block_num,
+                                            std::vector<uint8_t>(128, 0));
+  SM4_CTR(block_num, bit_mask);
+  for (int i = 0; i < block_num; i++) {
+    for (int j = 0; j < 128; j++) {
+      message[i][j] ^= bit_mask[i][j];
+    }
+  }
 
   // if (hexl::IsSupported()) {
   //   std::cout << "HEXL available, CPU features: " << hexl::CPUFeatures()
@@ -509,7 +590,7 @@ int main(int argc, char* argv[])
   // }
   // omp_set_num_threads(1);          // OpenMP 外层线程数
   // omp_set_nested(1);               // 允许嵌套并行（关键！！）
-  NTL::SetNumThreads(1);           // 设置使用 4 个线程
+  NTL::SetNumThreads(64);          // 设置使用 4 个线程
   int n = NTL::AvailableThreads(); // 获取最大可用线程数
   std::cout << "Using " << n << " threads.\n";
   srand(time(0));
@@ -609,13 +690,9 @@ int main(int argc, char* argv[])
   std::cout << "d: " << ea.getDegree() << std::endl;
 
   std::vector<uint8_t> in_vec(128), rk(1024);
-  // std::vector<uint8_t> out_vec(128);
-  // for (int i = 0; i < 128; i++)
-  //   in_vec[i] = rand() % 2;
 
-  // for (int i = 0; i < 32; i++)
-  //   rk[i] = rand() % 2;
-  encode(in_vec, rk);
+  // encode(in_vec, rk);
+  Encode_RK(rk);
 
   // Create a vector of long with nslots elements
   std::vector<helib::Ptxt<helib::BGV>> ptxt(128,
@@ -623,11 +700,17 @@ int main(int argc, char* argv[])
       ptrk(32, helib::Ptxt<helib::BGV>(context));
   // Set it with numbers 0..nslots - 1
   // ptxt = [0] [1] [2] ... [nslots-2] [nslots-1]
-  for (int i = 0; i < 128; i++)
-    for (int j = 0; j < ptxt[0].size(); ++j) {
+  // for (int i = 0; i < 128; i++)
+  //   for (int j = 0; j < ptxt[0].size(); ++j) {
+  //     ptxt[i][j] = (int)in_vec[i];
+  //   }
+
+  for (int j = 0; j < ptxt[0].size(); ++j) {
+    Encode_Plain(in_vec, j);
+    for (int i = 0; i < 128; i++) {
       ptxt[i][j] = (int)in_vec[i];
     }
-
+  }
   std::cout << std::endl;
   // Create a ciphertext object
   std::vector<helib::Ctxt> ctxt(128, helib::Ctxt(public_key)),
@@ -669,6 +752,7 @@ int main(int argc, char* argv[])
   int cnt = 0;
 
   for (int i = 0; i < 32; i++) {
+    // use one ctrk to save memory
     for (int k = 0; k < 32; k++)
       for (int j = 0; j < ptrk[0].size(); ++j) {
         ptrk[k][j] = (int)rk[k + i * 32];
@@ -682,9 +766,9 @@ int main(int argc, char* argv[])
       std::cout << "Recrypting round " << cnt << std::endl;
       auto start = std::chrono::high_resolution_clock::now();
 
-      for (int j = 0; j < 7; j++) {
-        if (j == 6)
-          for (int k = 0; k < 8; k++)
+      for (int j = 0; j < ceil(((double)128) / d); j++) {
+        if (j == ceil(((double)128) / d) - 1)
+          for (int k = 0; k < 128 - j * d; k++)
             ctxt_unpack1[k] = ctxt[k + j * d];
         else
           for (int k = 0; k < d; k++)
@@ -698,8 +782,8 @@ int main(int argc, char* argv[])
                       ct_pack,
                       ea,
                       unpackSlotEncoding);
-        if (j == 6)
-          for (int k = 0; k < 8; k++)
+        if (j == ceil(((double)128) / d) - 1)
+          for (int k = 0; k < 128 - j * d; k++)
             ctxt[k + j * d] = ctxt_unpack2[k];
         else
           for (int k = 0; k < d; k++)
@@ -727,7 +811,7 @@ int main(int argc, char* argv[])
       uint8_t val = 0;
       for (int bit = 0; bit < 8; ++bit) {
         int idx = byte * 8 + bit;
-        int bit_val = static_cast<long>(plaintext_result[idx][0]);
+        int bit_val = static_cast<long>(plaintext_result[idx][1]);
 
         val |= (bit_val & 0x1) << (7 - bit);
       }
@@ -751,80 +835,32 @@ int main(int argc, char* argv[])
     std::cout << std::dec << std::endl;
   }
 
-  // std::cout << "monomials Remaining noise budget: " << ctxt_out[0].capacity()
-  //           << " bits" << std::endl;
-
-  // for (int i = 0; i < 32; i++) {
-  //   // secret_key.Decrypt(plaintext_result[i], ctxt_out[i]);
-  //   secret_key.Decrypt(plaintext_result[i], ctxt[96 + i]);
-  //   std::cout << "SM4 F OUTPUT: " << plaintext_result[i][0] << std::endl;
-  // }
-
-  // uint8_t in0[32], in1[32], in2[32], in3[32], rk0[32], out[32];
-  // for (int i = 0; i < 32; i++) {
-  //   in0[i] = in_vec[i];
-  //   in1[i] = in_vec[i + 32];
-  //   in2[i] = in_vec[i + 64];
-  //   in3[i] = in_vec[i + 96];
-  //   rk0[i] = rk[i];
-  // }
-  // sm4_bitwise_F(in0, in1, in2, in3, rk0, out);
-
-  // for (int i = 0; i < 32; i++) {
-  //   std::cout << "SM4 F plain OUTPUT: " << (int)out[i] << std::endl;
-  // }
-
-  // for (int i = 0; i < 32; i++) {
-  //   if (plaintext_result[i][0] != out[i]) {
-  //     std::cout << "SM4 F OUTPUT MISMATCH at index " << i << std::endl;
-  //   }
-  // }
-
-  // std::vector<helib::Ctxt> ctxt_unpack1(20, helib::Ctxt(public_key)),
-  //     ctxt_unpack2(20, helib::Ctxt(public_key));
-
-  // while (ctxt[0].capacity() > 50) {
-  //   for (int i = 0; i < 20; i++)
-  //     ctxt[i].square();
-  //   cnt++;
-  // }
-
-  // for (int i = 0; i < 20; i++) {
-  //   ctxt_unpack1[i] = ctxt[i];
-  // }
-
-  // std::cout << "After squaring " << cnt
-  //           << " times, remaining noise budget: " <<
-  //           ctxt_unpack1[0].capacity()
-  //           << " bits" << std::endl;
-
-  // auto start = std::chrono::high_resolution_clock::now();
-  // std::vector<helib::zzX> unpackSlotEncoding(20);
-
-  // helib::buildUnpackSlotEncoding(unpackSlotEncoding, ea);
-
-  // helib::repack(ct_pack, helib::CtPtrs_vectorCt(ctxt_unpack1), ea);
-
-  // public_key.reCrypt(ct_pack);
-
-  // helib::unpack(helib::CtPtrs_vectorCt(ctxt_unpack2),
-  //               ct_pack,
-  //               ea,
-  //               unpackSlotEncoding);
-
-  // auto end = std::chrono::high_resolution_clock::now();
-
-  // for (int i = 0; i < 20; i++) {
-  //   secret_key.Decrypt(plaintext_result[i], ctxt_unpack2[i]);
-  //   std::cout << plaintext_result[i][0] << " ";
-  // }
-  // // public_key.reCrypt(ctxt[0]);
-
-  // std::cout << "After recryption, remaining noise budget: "
-  //           << ctxt_unpack2[0].capacity() << " bits" << std::endl;
-  // auto duration_ms = end - start;
-  // std::cout << "Recryption took " << duration_ms.count() << " ms." <<
-  // std::endl;
-
+  std::vector<helib::Ptxt<helib::BGV>> ptxt_message(
+      128,
+      helib::Ptxt<helib::BGV>(context));
+  for (int i = 0; i < 128; i++) {
+    for (int j = 0; j < ptxt_message[0].size(); ++j) {
+      ptxt_message[i][j] = (int)message[j][i];
+    }
+  }
+  bool match = true;
+  for (int i = 0; i < 4; i++) {
+    for (int j = 0; j < 32; j++) {
+      ctxt[(3 - i) * 32 + j] += ptxt_message[i * 32 + j];
+    }
+  }
+  for (int i = 0; i < 128; i++) {
+    secret_key.Decrypt(plaintext_result[i], ctxt[i]);
+    for (int j = 0; j < plaintext_result[0].size(); ++j) {
+      if (plaintext_result[i][j] != 0) {
+        match = false;
+        break;
+      }
+    }
+  }
+  if (match)
+    std::cout << "Decryption successful, plaintexts match!" << std::endl;
+  else
+    std::cout << "Decryption failed, plaintexts do not match!" << std::endl;
   return 0;
 }
