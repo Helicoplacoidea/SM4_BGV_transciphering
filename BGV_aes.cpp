@@ -15,17 +15,6 @@
 // operations that can be performed on both ciphertexts
 // and plaintexts.
 
-// #include <iostream>
-// #include <chrono>
-
-// #include <helib/helib.h>
-// #include <helib/binaryArith.h>
-// #include <helib/intraSlot.h>
-// #include <helib/zzX.h>
-// #include <NTL/vector.h>
-// #include <span>
-// #include <omp.h>
-
 #include "BGV_aes.h"
 
 int main(int argc, char* argv[])
@@ -272,7 +261,7 @@ int main(int argc, char* argv[])
       uint8_t val = 0;
       for (int bit = 0; bit < 8; ++bit) {
         int idx = byte * 8 + bit;
-        int bit_val = static_cast<long>(plaintext_result[idx][1]);
+        int bit_val = static_cast<long>(plaintext_result[idx][0]);
 
         val |= (bit_val & 0x1) << (7 - bit);
       }
