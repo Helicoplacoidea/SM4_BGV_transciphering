@@ -15,7 +15,7 @@
 // operations that can be performed on both ciphertexts
 // and plaintexts.
 
-#include "BGV_aes.h"
+#include "BGV_sm4.h"
 
 int main(int argc, char* argv[])
 {
@@ -37,7 +37,7 @@ int main(int argc, char* argv[])
   // Plaintext prime modulus
   unsigned long p = 2;
   // Cyclotomic polynomial - defines phi(m)
-  unsigned long m = 31775;
+  unsigned long m = 32767;
   // Hensel lifting (default = 1)
   unsigned long r = 1;
   // Number of bits of the modulus chain
@@ -45,11 +45,9 @@ int main(int argc, char* argv[])
   // Number of columns of Key-Switching matrix (default = 2 or 3)
   unsigned long c = 3;
 
-  std::vector<long> mvec = {41, 775};
-  // Generating set of Zm* group.
-  std::vector<long> gens = {6976, 24806};
-  // Orders of the previous generators.
-  std::vector<long> ords = {40, 30};
+  std::vector<long> mvec = {31, 7, 151}; // 第一层 m1=7, 第二层 m2=31*151
+  std::vector<long> gens = {11628, 28087, 25824};
+  std::vector<long> ords = {30, 6, -10};
 
   std::cout << "\n*********************************************************";
   std::cout << "\n*         Basic Mathematical Operations Example         *";
@@ -84,6 +82,7 @@ int main(int argc, char* argv[])
   NTL::Vec<long> Mvec;
   append(Mvec, mvec[0]);
   append(Mvec, mvec[1]);
+  append(Mvec, mvec[2]);
 
   context.enableBootStrapping(Mvec,
                               true,

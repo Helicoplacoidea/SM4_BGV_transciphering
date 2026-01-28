@@ -9,19 +9,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License. See accompanying LICENSE file.
 
-add_executable(BGV_aes BGV_aes.cpp)
+add_executable(BGV_sm4 BGV_sm4.cpp)
 add_executable(bench benchmark.cpp)
 
-target_link_libraries(BGV_aes helib)
+target_link_libraries(BGV_sm4 helib)
 target_link_libraries(bench helib)
 
 find_package(OpenMP REQUIRED)
 # 🔽 添加这行以链接 OpenMP
-target_link_libraries(BGV_aes OpenMP::OpenMP_CXX)
+target_link_libraries(BGV_sm4 OpenMP::OpenMP_CXX)
 target_link_libraries(bench OpenMP::OpenMP_CXX)
 
 
 # find_package(HEXL 1.2.6
 #     REQUIRED)
 
-# target_link_libraries(BGV_aes HEXL::hexl)
+# target_link_libraries(BGV_sm4 HEXL::hexl)

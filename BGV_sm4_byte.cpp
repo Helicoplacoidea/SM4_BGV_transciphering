@@ -1,11 +1,9 @@
 #include <iostream>
-#include <chrono>
 
 #include <helib/helib.h>
 #include <helib/intraSlot.h>
 #include <NTL/vector.h>
 #include <helib/permutations.h>
-// #include "originsm4.h"
 
 #define PolyType helib::DoubleCRT
 
@@ -358,26 +356,19 @@ int main(int argc, char* argv[])
 
   std::cout << "Initialising context object..." << std::endl;
   // Initialize context
+  // === 新版 ContextBuilder 构造 ===
   helib::Context context = helib::ContextBuilder<helib::BGV>()
-                               .m(m)
-                               .p(p)
-                               .r(r)
+                               .m(m) // 环阶
+                               .p(p) // 明文模数
+                               .r(r) // lifting
                                .gens(gens)
                                .ords(ords)
-                               .bits(bits)
-                               .c(c)
-                               .bootstrappable(true)
-                               .skHwt(120)
+                               .bits(bits) // 模数链深度
+                               .skHwt(64)
                                .mvec(mvec)
-                               .thickboot()
+                               .c(c)                 // key-switching 参数
+                               .bootstrappable(boot) // 启用bootstrapping支持
                                .build();
-  // context.bitsPerLevel = 23;
-  // context.getZMStar().set_cM(mValues[cid][13] / 100.0);
-  // Modify the context, adding primes to the modulus chain
-  std::cout << "Building modulus chain..." << std::endl;
-  // buildModChain(context, bits, c, true, 64);
-  // if (boot)
-  //   context.makeBootstrappable(mvec, 64);
 
   std::cout << "security=" << context.securityLevel() << std::endl;
   std::cout << "# small primes = " << context.getSmallPrimes().card() << "\n";
@@ -393,7 +384,7 @@ int main(int argc, char* argv[])
                         log(2.0) +
                     0.5)
             << "\n";
-  std::cout << "scale=" << context.getScale() << std::endl;
+
   std::cout << std::endl;
 
   // Print the security level
@@ -410,6 +401,7 @@ int main(int argc, char* argv[])
   // Compute key-switching matrices that we need
   // Add key-switching matrices for the automorphisms that we need
   long ord = context.getZMStar().OrderOf(0);
+
   for (long i = 1; i < 16; i++) { // rotation along 1st dim by size i*ord/16
     long exp = i * ord / 16;
     long val =
@@ -507,7 +499,23 @@ int main(int argc, char* argv[])
                            0x54,
                            0x32,
                            0x10};
-  unsigned char out[16];
+  unsigned char out[16] = {0x01,
+                           0x23,
+                           0x45,
+                           0x67,
+                           0x89,
+                           0xab,
+                           0xcd,
+                           0xef,
+                           0xfe,
+                           0xdc,
+                           0xba,
+                           0x98,
+                           0x76,
+                           0x54,
+                           0x32,
+                           0x10};
+
   // sm4_setkey_enc(&octx, key);
   // sm4_crypt_ecb(&octx, SM4_ENCRYPT, 16, b, out);
 
@@ -515,7 +523,7 @@ int main(int argc, char* argv[])
   helib::Ctxt tmpCtxt(public_key);
   std::vector<helib::Ctxt> expandEncKeys(32, tmpCtxt);
   for (int i = 0; i < 32; i++) {
-    unsigned long curkey = 2;
+    unsigned long curkey = key[i % 16];
     unsigned char curkeypart1 = (curkey >> 24) & 0xff;
     unsigned char curkeypart2 = (curkey >> 16) & 0xff;
     unsigned char curkeypart3 = (curkey >> 8) & 0xff;
@@ -717,8 +725,6 @@ int main(int argc, char* argv[])
               << ctxts[0].getPrimeSet().card() << std::endl;
     for (int n = 0; n < ctxtnum; n++) {
       std::cout << "ctxt num:" << n << std::endl;
-      auto start = std::chrono::high_resolution_clock::now();
-
       oneRound(ctxts[n],
                ea2,
                secret_key,
@@ -747,10 +753,6 @@ int main(int argc, char* argv[])
                net,
                net1,
                net2);
-      auto end = std::chrono::high_resolution_clock::now();
-      std::chrono::duration<double, std::milli> duration_ms = end - start;
-      std::cout << "1 Round took " << duration_ms.count() << " ms."
-                << std::endl;
       if (i == 31) {
         // last round, reverse
         std::cout << "##last round, reverse" << std::endl;

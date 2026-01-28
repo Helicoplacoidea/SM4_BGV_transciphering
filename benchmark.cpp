@@ -1,5 +1,5 @@
 
-#include "BGV_aes.h"
+#include "BGV_sm4.h"
 
 void SboxLazy(int thread_num,
               helib::Context& context,
