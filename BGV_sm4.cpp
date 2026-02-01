@@ -17,6 +17,8 @@
 
 #include "BGV_sm4.h"
 
+using namespace sm4;
+
 int main(int argc, char* argv[])
 {
 

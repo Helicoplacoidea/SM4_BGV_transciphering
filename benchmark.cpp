@@ -1,5 +1,6 @@
-
 #include "BGV_sm4.h"
+
+using namespace sm4;
 
 void SboxLazy(int thread_num,
               helib::Context& context,
