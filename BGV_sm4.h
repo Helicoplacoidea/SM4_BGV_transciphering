@@ -286,23 +286,37 @@ std::vector<helib::Ctxt> reorder_to_bitmask_order(
   // 获取原始顺序对应的 bitmask 表达
   std::vector<int> original_order = generate_bitmasks(var_bitmasks);
 
-  // 构建 bitmask -> 值 的映射
-  std::unordered_map<int, helib::Ctxt> bitmask_to_value;
-  for (size_t i = 0; i < 255; ++i) {
-    bitmask_to_value.insert({original_order[i], values[i]});
-  }
+  // // 构建 bitmask -> 值 的映射
+  // std::unordered_map<int, helib::Ctxt> bitmask_to_value;
+  // for (size_t i = 0; i < 255; ++i) {
+  //   bitmask_to_value.insert({original_order[i], values[i]});
+  // }
 
-  // 重新按 bitmask 升序排列
-  std::vector<int> sorted_bitmasks;
-  for (const auto& [mask, _] : bitmask_to_value) {
-    sorted_bitmasks.push_back(mask);
-  }
-  std::sort(sorted_bitmasks.begin(), sorted_bitmasks.end());
+  // // 重新按 bitmask 升序排列
+  // std::vector<int> sorted_bitmasks;
+  // for (const auto& [mask, _] : bitmask_to_value) {
+  //   sorted_bitmasks.push_back(mask);
+  // }
+  // std::sort(sorted_bitmasks.begin(), sorted_bitmasks.end());
 
-  // 输出按 bitmask 升序排列的 Ctxt 值
+  // // 输出按 bitmask 升序排列的 Ctxt 值
+  // std::vector<helib::Ctxt> reordered;
+  // for (int mask : sorted_bitmasks) {
+  //   reordered.push_back(bitmask_to_value.at(mask));
+  // }
+
+  std::vector<size_t> idx(255);
+  std::iota(idx.begin(), idx.end(), 0);
+
+  std::sort(idx.begin(), idx.end(),
+          [&](size_t a, size_t b) {
+            return original_order[a] < original_order[b];
+          });
+
   std::vector<helib::Ctxt> reordered;
-  for (int mask : sorted_bitmasks) {
-    reordered.push_back(bitmask_to_value.at(mask));
+  reordered.reserve(255);
+  for (size_t i : idx) {
+    reordered.push_back(values[i]); // 只拷贝一次
   }
 
   return reordered;
@@ -332,7 +346,7 @@ void sm4_SBoxLUT_byte_raw(std::vector<helib::Ctxt>& bit,
   if (bit.size() != 8) {
     std::cout << "The input length of the Sbox is wrong (8bit)!!" << std::endl;
   };
-#pragma omp parallel for
+// #pragma omp parallel for
   for (int i = 0; i < 8; i++) {
     // printf("[OMP] Thread %d working on bit %d\n", omp_get_thread_num(), i);
     bit[i] = sm4_SBoxLUT_bit(ctmp, monomials, i);
@@ -346,7 +360,7 @@ void sm4_SBoxLUT_byte_LazyRelin(std::vector<helib::Ctxt>& bit,
   if (bit.size() != 8) {
     std::cout << "The input length of the Sbox is wrong (8bit)!!" << std::endl;
   };
-#pragma omp parallel for
+// #pragma omp parallel for
   for (int i = 0; i < 8; i++) {
     // printf("[OMP] Thread %d working on bit %d\n", omp_get_thread_num(), i);
     bit[i] = sm4_SBoxLUT_bit(ctmp, monomials, i);
@@ -392,19 +406,6 @@ void SubByte_Lazy(std::vector<helib::Ctxt>& tmp,
                  bit.end()); // <-- 加这一行，改成大端顺序
     std::copy(bit.begin(), bit.end(), tmp.begin() + 8 * i);
   }
-}
-
-void invertSingle(helib::Ctxt& ctxt)
-{
-  helib::Ctxt tmp1(ctxt);     // tmp1   = data[i] = X
-  tmp1.frobeniusAutomorph(1); // tmp1   = X^2   after Z -> Z^2
-  ctxt.multiplyBy(tmp1);      // data[i]= X^3
-  helib::Ctxt tmp2(ctxt);     // tmp2   = X^3
-  tmp2.frobeniusAutomorph(2); // tmp2   = X^12  after Z -> Z^4
-  tmp1.multiplyBy(tmp2);      // tmp1   = X^14
-  ctxt.multiplyBy(tmp2);      // data[i]= X^15
-  ctxt.frobeniusAutomorph(4); // data[i]= X^240 after Z -> Z^16
-  ctxt.multiplyBy(tmp1);      // data[i]= X^254
 }
 
 void sm4_L(std::vector<helib::Ctxt>& ctxt, const helib::PubKey& public_key)
