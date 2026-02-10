@@ -242,8 +242,8 @@ int main()
 
   std::cout << "d: " << ea.getDegree() << std::endl;
 
-  batchRecrypt(thread_num, d, ea, context, public_key);
+  // batchRecrypt(thread_num, d, ea, context, public_key);
   SboxLazy(thread_num, context, public_key);
-  SboxRaw(thread_num, context, public_key);
+  // SboxRaw(thread_num, context, public_key);
   return 0;
 }

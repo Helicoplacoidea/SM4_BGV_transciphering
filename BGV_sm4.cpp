@@ -30,7 +30,7 @@ int main(int argc, char* argv[])
   // }
   // omp_set_num_threads(1);          // OpenMP 外层线程数
   // omp_set_nested(1);               // 允许嵌套并行（关键！！）
-  NTL::SetNumThreads(64);          // 设置使用 4 个线程
+  NTL::SetNumThreads(1);           // 设置使用 4 个线程
   int n = NTL::AvailableThreads(); // 获取最大可用线程数
   std::cout << "Using " << n << " threads.\n";
   srand(time(0));
@@ -270,7 +270,7 @@ int main(int argc, char* argv[])
     }
     std::cout << "Round " << i + 1 << ":" << std::endl;
     std::cout << "SM4 F OUTPUT (big-endian bytes): ";
-    for (uint8_t b : sm4_output_bytes) {
+    for (uint8_t& b : sm4_output_bytes) {
       std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b
                 << " ";
     }

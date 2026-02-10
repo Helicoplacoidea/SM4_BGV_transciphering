@@ -131,12 +131,12 @@ inline constexpr char SBox7[255] = {
     0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1,
     1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
 
-std::vector<const char*> SBOX_TABLES =
+inline std::vector<const char*> SBOX_TABLES =
     {SBox0, SBox1, SBox2, SBox3, SBox4, SBox5, SBox6, SBox7};
 
 inline constexpr char constants[8] = {0, 1, 1, 0, 1, 0, 1, 1};
 
-int num = 0;
+inline int num = 0;
 
 inline constexpr std::array<size_t, 255> BITMASK_PERM = {
     234, 235, 236, 237, 225, 228, 231, 238, 226, 229, 232, 239, 227, 230, 233,
@@ -178,13 +178,13 @@ std::vector<helib::Ctxt> recurse_raw(const std::vector<helib::Ctxt>& bits)
 
   std::vector<helib::Ctxt> combined;
 
-  for (helib::Ctxt l : left_res) {
-    for (helib::Ctxt r : right_res) {
+  for (const auto& l : left_res) {
+    for (const auto& r : right_res) {
       helib::Ctxt tmp = l;
 
       tmp.multiplyBy(r);
       num++;
-      combined.push_back(tmp);
+      combined.push_back(std::move(tmp));
     }
   }
 
@@ -216,23 +216,23 @@ std::vector<helib::Ctxt> recurse_LazyRelin(const std::vector<helib::Ctxt>& bits)
 
   std::vector<helib::Ctxt> combined;
   if (bits.size() == 4)
-    for (helib::Ctxt l : left_res) {
-      for (helib::Ctxt r : right_res) {
+    for (const auto& l : left_res) {
+      for (const auto& r : right_res) {
         helib::Ctxt tmp = l;
 
         tmp.multiplyBy(r);
         num++;
-        combined.push_back(tmp);
+        combined.push_back(std::move(tmp));
       }
     }
   else
-    for (helib::Ctxt l : left_res) {
-      for (helib::Ctxt r : right_res) {
+    for (const auto& l : left_res) {
+      for (const auto& r : right_res) {
         helib::Ctxt tmp = l;
 
         tmp.multLowLvl(r);
         // num++;
-        combined.push_back(tmp);
+        combined.push_back(std::move(tmp));
       }
     }
   // 拼接 combined + left + right
@@ -276,8 +276,8 @@ std::vector<int> generate_bitmasks(const std::vector<int>& vars)
   std::vector<int> right_masks = generate_bitmasks(right);
 
   std::vector<int> combined;
-  for (int l : left_masks) {
-    for (int r : right_masks) {
+  for (int& l : left_masks) {
+    for (int& r : right_masks) {
       combined.push_back(l | r);
     }
   }
@@ -306,7 +306,7 @@ std::vector<helib::Ctxt> reorder_to_bitmask_order(
   return reordered;
 }
 
-helib::Ctxt sm4_SBoxLUT_bit(helib::Ctxt const_enc,
+helib::Ctxt sm4_SBoxLUT_bit(const helib::Ctxt& const_enc,
                             std::vector<helib::Ctxt>& monomials,
                             int index)
 {
@@ -324,7 +324,7 @@ helib::Ctxt sm4_SBoxLUT_bit(helib::Ctxt const_enc,
 }
 
 void sm4_SBoxLUT_byte_raw(std::vector<helib::Ctxt>& bit,
-                          helib::Ctxt ctmp,
+                          const helib::Ctxt& ctmp,
                           std::vector<helib::Ctxt>& monomials)
 {
   if (bit.size() != 8) {
@@ -338,7 +338,7 @@ void sm4_SBoxLUT_byte_raw(std::vector<helib::Ctxt>& bit,
 }
 
 void sm4_SBoxLUT_byte_LazyRelin(std::vector<helib::Ctxt>& bit,
-                                helib::Ctxt ctmp,
+                                const helib::Ctxt& ctmp,
                                 std::vector<helib::Ctxt>& monomials)
 {
   if (bit.size() != 8) {
@@ -354,12 +354,16 @@ void sm4_SBoxLUT_byte_LazyRelin(std::vector<helib::Ctxt>& bit,
 
 void SubByte_raw(std::vector<helib::Ctxt>& tmp,
                  const helib::PubKey& public_key,
-                 helib::Ctxt ctmp)
+                 const helib::Ctxt& ctmp)
 {
-  std::vector<helib::Ctxt> monomials(255, helib::Ctxt(public_key));
+  std::vector<helib::Ctxt> monomials;
+  monomials.reserve(255);
+  std::vector<helib::Ctxt> bit;
+  bit.reserve(8);
   for (int i = 0; i < 4; i++) {
-    std::vector<helib::Ctxt> bit(tmp.begin() + 8 * i,
-                                 tmp.begin() + 8 * (i + 1));
+    for (int j = 0; j < 8; ++j) {
+      bit.push_back(tmp[8 * i + j]);
+    }
     std::reverse(bit.begin(), bit.end()); // <-- 加这一行，改成大端顺序
     monomials = layered_combine_bin_raw(bit);
     std::cout << "NUM:" << num << std::endl;
@@ -368,18 +372,30 @@ void SubByte_raw(std::vector<helib::Ctxt>& tmp,
     sm4_SBoxLUT_byte_raw(bit, ctmp, monomials);
     std::reverse(bit.begin(),
                  bit.end()); // <-- 加这一行，改成大端顺序
-    std::copy(bit.begin(), bit.end(), tmp.begin() + 8 * i);
+    for (int j = 0; j < 8; ++j) {
+      tmp[8 * i + j] = std::move(bit[j]);
+    }
   }
 }
 
 void SubByte_Lazy(std::vector<helib::Ctxt>& tmp,
                   const helib::PubKey& public_key,
-                  helib::Ctxt ctmp)
+                  const helib::Ctxt& ctmp)
 {
-  std::vector<helib::Ctxt> monomials(255, helib::Ctxt(public_key));
+  // 1. 预留空间，避免在循环中反复分配内存
+  std::vector<helib::Ctxt> monomials;
+  monomials.reserve(255);
+
+  // 2. 准备一个固定大小的容器，用于处理当前的 8 个位
+  std::vector<helib::Ctxt> bit;
+  bit.reserve(8);
   for (int i = 0; i < 4; i++) {
-    std::vector<helib::Ctxt> bit(tmp.begin() + 8 * i,
-                                 tmp.begin() + 8 * (i + 1));
+    bit.clear();
+    // 3. 使用移动语义或显式拷贝获取子集
+    // 如果 tmp 在此处之后不再需要旧值，可以用 move，否则用拷贝构造
+    for (int j = 0; j < 8; ++j) {
+      bit.push_back(tmp[8 * i + j]);
+    }
     std::reverse(bit.begin(), bit.end()); // <-- 加这一行，改成大端顺序
     monomials = layered_combine_bin_Lazy(bit);
     std::cout << "NUM:" << num << std::endl;
@@ -388,13 +404,17 @@ void SubByte_Lazy(std::vector<helib::Ctxt>& tmp,
     sm4_SBoxLUT_byte_LazyRelin(bit, ctmp, monomials);
     std::reverse(bit.begin(),
                  bit.end()); // <-- 加这一行，改成大端顺序
-    std::copy(bit.begin(), bit.end(), tmp.begin() + 8 * i);
+    for (int j = 0; j < 8; ++j) {
+      // 使用 move 将计算结果直接转让回 tmp，避免深拷贝
+      tmp[8 * i + j] = std::move(bit[j]);
+    }
   }
 }
 
 void sm4_L(std::vector<helib::Ctxt>& ctxt, const helib::PubKey& public_key)
 {
-  std::vector<helib::Ctxt> tmp(32, helib::Ctxt(public_key));
+  std::vector<helib::Ctxt> tmp;
+  tmp.reserve(32);
 
   for (int i = 0; i < 32; i++) {
     helib::Ctxt acc = ctxt[i]; // 👈 明确累加器
@@ -402,10 +422,10 @@ void sm4_L(std::vector<helib::Ctxt>& ctxt, const helib::PubKey& public_key)
     acc += ctxt[(i + 10) % 32];
     acc += ctxt[(i + 18) % 32];
     acc += ctxt[(i + 24) % 32];
-    tmp[i] = acc;
+    tmp.push_back(std::move(acc));
   }
 
-  ctxt = tmp; // 👈 整体替换
+  ctxt = std::move(tmp); // 👈 整体替换
 }
 
 void sm4_F(std::span<helib::Ctxt> ctxt0,
@@ -414,17 +434,18 @@ void sm4_F(std::span<helib::Ctxt> ctxt0,
            std::span<helib::Ctxt> ctxt3,
            std::vector<helib::Ctxt>& rk,
            const helib::PubKey& public_key,
-           helib::Ctxt ctmp,
+           const helib::Ctxt& ctmp,
            std::vector<helib::Ctxt>& F_out)
 {
-  std::vector<helib::Ctxt> tmp(32, helib::Ctxt(public_key));
-  // std::vector<helib::Ctxt> monomials(255, helib::Ctxt(public_key));
+  std::vector<helib::Ctxt> tmp;
+  tmp.reserve(32);
 
   for (int i = 0; i < 32; i++) {
-    tmp[i] = ctxt1[i];
-    tmp[i] += ctxt2[i];
-    tmp[i] += ctxt3[i];
-    tmp[i] += rk[i];
+    helib::Ctxt acc = ctxt1[i];
+    acc += ctxt2[i];
+    acc += ctxt3[i];
+    acc += rk[i];
+    tmp.push_back(std::move(acc));
   }
   auto start = std::chrono::high_resolution_clock::now();
   SubByte_Lazy(tmp, public_key, ctmp);
@@ -602,7 +623,8 @@ void SM4_CTR(int block_num, std::vector<std::vector<uint8_t>>& bit_mask)
       // std::cout << "Round " << i + 1 << ":" << std::endl;
       // std::cout << "SM4 F OUTPUT (big-endian bytes): ";
       // for (uint8_t b : sm4_output_bytes) {
-      //   std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b
+      //   std::cout << std::hex << std::setw(2) << std::setfill('0') <<
+      //   (int)b
       //             << " ";
       // }
     }
